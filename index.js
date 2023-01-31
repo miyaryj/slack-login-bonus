@@ -19,11 +19,12 @@ exports.handler = async (event) => {
       "on chat: " + chatUsers.map((u) => `<@${u}>`).join(" "),
       "on huddle: " + huddleUsers.map((u) => `<@${u}>`).join(" "),
     ];
-    await app.client.chat.postMessage({
+    const result = await app.client.chat.postMessage({
       token: process.env.SLACK_BOT_TOKEN,
-      channel: "CG4TU8X41",
+      channel: process.env.TARGET_CHANNEL,
       text: messages.join("\n"),
     });
+    console.log(result);
   } catch (error) {
     console.error(error);
   }
@@ -38,7 +39,7 @@ const getChatUsers = async (today) => {
   console.log(result);
 
   const chatUsers = result.messages
-    .filter((m) => !m.bot_id && !m.app_id)
+    .filter((m) => !m.bot_id && !m.app_id && !m.subtype)
     .map((m) => {
       return m.user;
     })
