@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node cli.js"
+    "start": "node cli.js",
+    "dry": "node cli.js --dry-run"
   },
   "author": "",
   "license": "ISC",
