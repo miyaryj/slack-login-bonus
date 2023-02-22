@@ -16,14 +16,29 @@ exports.handler = async (event) => {
     const { chatUsers, huddleUsers } = await getUsers(today);
 
     const chatUserInfos = await getUserInfos(chatUsers);
-    const chatUserNames = chatUserInfos.map((userInfo) => userInfo.profile.display_name);
+    const chatUserNames = chatUserInfos.map(
+      (userInfo) => userInfo.profile.display_name
+    );
     const huddleUserInfos = await getUserInfos(huddleUsers);
-    const huddleUserNames = huddleUserInfos.map((userInfo) => userInfo.profile.display_name);
+    const huddleUserNames = huddleUserInfos.map(
+      (userInfo) => userInfo.profile.display_name
+    );
+
+    if (!chatUserNames.length && !huddleUserNames.length) {
+      console.log("No login users");
+      return;
+    }
 
     const messages = [
       "Today's login users",
-      "on chat: " + chatUserNames.map((name) => `*${name}*`).join(", "),
-      "on huddle: " + huddleUserNames.map((name) => `*${name}*`).join(", "),
+      "on chat: " +
+        (chatUserNames.length
+          ? chatUserNames.map((name) => `*${name}*`).join(", ")
+          : "-"),
+      "on huddle: " +
+        (huddleUserNames.length
+          ? huddleUserNames.map((name) => `*${name}*`).join(", ")
+          : "-"),
     ];
     console.log(messages);
 
