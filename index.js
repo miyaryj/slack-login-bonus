@@ -15,10 +15,15 @@ exports.handler = async (event) => {
   try {
     const { chatUsers, huddleUsers } = await getUsers(today);
 
+    const chatUserInfos = await getUserInfos(chatUsers);
+    const chatUserNames = chatUserInfos.map((userInfo) => userInfo.profile.display_name);
+    const huddleUserInfos = await getUserInfos(huddleUsers);
+    const huddleUserNames = huddleUserInfos.map((userInfo) => userInfo.profile.display_name);
+
     const messages = [
       "Today's login users",
-      "on chat: " + chatUsers.map((u) => `<@${u}>`).join(" "),
-      "on huddle: " + huddleUsers.map((u) => `<@${u}>`).join(" "),
+      "on chat: " + chatUserNames.map((name) => `*${name}*`).join(", "),
+      "on huddle: " + huddleUserNames.map((name) => `*${name}*`).join(", "),
     ];
     console.log(messages);
 
@@ -45,7 +50,7 @@ const getUsers = async (today) => {
   console.log(result);
 
   const chatUsers = result.messages
-    .filter((m) => !m.bot_id && !m.app_id && !m.subtype)
+    .filter((m) => !m.bot_id && !m.app_id)
     .map((m) => {
       return m.user;
     })
@@ -67,4 +72,17 @@ const getUsers = async (today) => {
   console.log(huddleUsers);
 
   return { chatUsers, huddleUsers };
+};
+
+const getUserInfos = async (users) => {
+  const results = await Promise.all(
+    users.map((user) => {
+      return app.client.users.info({
+        token: process.env.SLACK_BOT_TOKEN,
+        user: user,
+      });
+    })
+  );
+
+  return results.map((result) => result.user);
 };
