@@ -17,11 +17,11 @@ exports.handler = async (event) => {
 
     const chatUserInfos = await getUserInfos(chatUsers);
     const chatUserNames = chatUserInfos.map(
-      (userInfo) => userInfo.profile.display_name
+      (userInfo) => userInfo.profile.display_name || userInfo.real_name
     );
     const huddleUserInfos = await getUserInfos(huddleUsers);
     const huddleUserNames = huddleUserInfos.map(
-      (userInfo) => userInfo.profile.display_name
+      (userInfo) => userInfo.profile.display_name || userInfo.real_name
     );
 
     if (!chatUserNames.length && !huddleUserNames.length) {
@@ -65,6 +65,7 @@ const getUsers = async (today) => {
   console.log(result);
 
   const chatUsers = result.messages
+    .reverse()
     .filter((m) => !m.bot_id && !m.app_id)
     .map((m) => {
       return m.user;
