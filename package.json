@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node cli.js",
-    "dry": "node cli.js --dry-run"
+    "history": "node cli.js --history",
+    "dry": "node cli.js --dry-run",
+    "history:dry": "node cli.js --history --dry-run"
   },
   "author": "",
   "license": "ISC",
