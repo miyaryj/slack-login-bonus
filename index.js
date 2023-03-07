@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { App } = require("@slack/bolt");
-const moment = require("moment");
+const { DateTime } = require("luxon");
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -10,7 +10,8 @@ const app = new App({
 exports.handler = async (event) => {
   console.log(event);
   const { dryRun } = event;
-  const today = moment().startOf("day");
+  const today = DateTime.now().setZone('Asia/Tokyo').startOf("day");
+  console.log("today: ", today.toISO());
 
   try {
     const { chatUsers, huddleUsers } = await getUsers(today);
@@ -59,7 +60,7 @@ const getUsers = async (today) => {
   const result = await app.client.conversations.history({
     token: process.env.SLACK_BOT_TOKEN,
     channel: process.env.TARGET_CHANNEL,
-    oldest: today.unix(),
+    oldest: today.toUnixInteger(),
     include_all_metadata: true,
   });
   console.log(result);
