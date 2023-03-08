@@ -35,6 +35,28 @@ const groupby = (array, by) => {
   );
 };
 
+const createCalendar = (start, end) => {
+  const calendar = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+
+  // 開始日より前の曜日をパディングする
+  let date = start;
+  while (date.weekday > 1) {
+    date = date.minus({ days: 1 });
+    if (calendar[date.weekday]) {
+      calendar[date.weekday].push(null);
+    }
+  }
+
+  date = start;
+  while (date <= end) {
+    if (calendar[date.weekday]) {
+      calendar[date.weekday].push({ date: date.toISODate() });
+    }
+    date = date.plus({ days: 1 });
+  }
+  return calendar;
+};
+
 exports.handler = async (event) => {
   console.log(event);
   const { history, dryRun } = event;
@@ -47,7 +69,7 @@ exports.handler = async (event) => {
 };
 
 const reportToday = async (dryRun) => {
-  const today = DateTime.now().setZone('Asia/Tokyo').startOf("day");
+  const today = DateTime.now().setZone("Asia/Tokyo").startOf("day");
   console.log("today: ", today.toISO());
 
   try {
@@ -99,21 +121,72 @@ const reportHistory = async (dryRun) => {
     console.error("No HISTORY_SINCE");
     return;
   }
-  const since = DateTime.fromISO(sinceStr).setZone('Asia/Tokyo').startOf("day");
-  console.log("since: ", since.toISO());
+  const since = DateTime.fromISO(sinceStr).setZone("Asia/Tokyo").startOf("day");
+  const today = DateTime.now().setZone("Asia/Tokyo").startOf("day");
+  console.log(`since: ${since.toISO()}, today: ${today.toISO()}`);
 
   try {
+    const userCals = {};
     const histories = await getHistories(since);
     const userHistories = groupby(histories, "user");
-    userHistories.forEach(([user, histories]) => {
+    userHistories.slice(0, 3).forEach(([user, histories]) => {
       const loginDates = histories
         .map((h) => h.date)
         .reduce((uniq, a) => {
           if (uniq.indexOf(a) < 0) uniq.push(a);
           return uniq;
         }, []);
-      console.log(`${user}: ${loginDates}`);
+
+      const cal = createCalendar(since, today);
+      Object.values(cal).forEach((week) => {
+        week.forEach((day) => {
+          if (day && loginDates.indexOf(day.date) >= 0) {
+            day.login = true;
+          }
+        });
+      });
+      userCals[user] = cal;
+
+      const calStr = Object.values(cal)
+        .map((week) => {
+          return week
+            .map((day) => (day ? (day.login ? "■" : "□") : "　"))
+            .join(" ");
+        })
+        .join("\n");
+      console.log(user + "\n" + calStr);
     });
+
+    if (!dryRun) {
+      const result = await app.client.chat.postMessage({
+        token: process.env.SLACK_BOT_TOKEN,
+        channel: process.env.TARGET_CHANNEL,
+        text: "Weekly login report",
+      });
+      console.log(result);
+
+      if (result.ok) {
+        for (const user in userCals) {
+          const calStr = Object.values(userCals[user])
+            .map((week) => {
+              return week
+                .map((day) => {
+                  if (!day) return ":white_small_square:";
+                  return day.login ? ":large_green_square:" : ":white_square:";
+                })
+                .join("");
+            })
+            .join("\n");
+          const result1 = await app.client.chat.postMessage({
+            token: process.env.SLACK_BOT_TOKEN,
+            channel: process.env.TARGET_CHANNEL,
+            text: `<@${user}>` + "\n" + calStr,
+            thread_ts: result.ts,
+          });
+          console.log(result1);
+        }
+      }
+    }
   } catch (error) {
     console.error(error);
   }
