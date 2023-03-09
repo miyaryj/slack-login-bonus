@@ -7,14 +7,73 @@ const app = new App({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
 });
 
+const isUserMessage = (message) => {
+  return (
+    !message.bot_id &&
+    !message.app_id &&
+    message.user &&
+    message.user != "USLACKBOT"
+  );
+};
+
+const isHuddleMessage = (message) => {
+  return message.user == "USLACKBOT" && message.room;
+};
+
+const groupby = (array, by) => {
+  return Array.from(
+    array.reduce((map, cur, idx, src) => {
+      const key = cur[by];
+      const list = map.get(key);
+      if (list) {
+        list.push(cur);
+      } else {
+        map.set(key, [cur]);
+      }
+      return map;
+    }, new Map())
+  );
+};
+
+const createCalendar = (start, end) => {
+  const calendar = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+
+  // 開始日より前の曜日をパディングする
+  let date = start;
+  while (date.weekday > 1) {
+    date = date.minus({ days: 1 });
+    if (calendar[date.weekday]) {
+      calendar[date.weekday].push(null);
+    }
+  }
+
+  date = start;
+  while (date <= end) {
+    if (calendar[date.weekday]) {
+      calendar[date.weekday].push({ date: date.toISODate() });
+    }
+    date = date.plus({ days: 1 });
+  }
+  return calendar;
+};
+
 exports.handler = async (event) => {
   console.log(event);
-  const { dryRun } = event;
-  const today = DateTime.now().setZone('Asia/Tokyo').startOf("day");
+  const { history, dryRun } = event;
+
+  if (history) {
+    await reportHistory(dryRun);
+  } else {
+    await reportToday(dryRun);
+  }
+};
+
+const reportToday = async (dryRun) => {
+  const today = DateTime.now().setZone("Asia/Tokyo").startOf("day");
   console.log("today: ", today.toISO());
 
   try {
-    const { chatUsers, huddleUsers } = await getUsers(today);
+    const { chatUsers, huddleUsers } = await getLoginUsers(today);
 
     const chatUserInfos = await getUserInfos(chatUsers);
     const chatUserNames = chatUserInfos.map(
@@ -56,7 +115,87 @@ exports.handler = async (event) => {
   }
 };
 
-const getUsers = async (today) => {
+const reportHistory = async (dryRun) => {
+  const sinceStr = process.env.HISTORY_SINCE;
+  if (!sinceStr) {
+    console.error("No HISTORY_SINCE");
+    return;
+  }
+  const since = DateTime.fromISO(sinceStr).setZone("Asia/Tokyo").startOf("day");
+  const today = DateTime.now().setZone("Asia/Tokyo").startOf("day");
+  console.log(`since: ${since.toISO()}, today: ${today.toISO()}`);
+
+  try {
+    const userCals = {};
+    const histories = await getHistories(since);
+    const userHistories = groupby(histories, "user");
+    userHistories.forEach(([user, histories]) => {
+      const loginDates = histories
+        .map((h) => h.date)
+        .reduce((uniq, a) => {
+          if (uniq.indexOf(a) < 0) uniq.push(a);
+          return uniq;
+        }, []);
+
+      const cal = createCalendar(since, today);
+      Object.values(cal).forEach((week) => {
+        week.forEach((day) => {
+          if (day && loginDates.indexOf(day.date) >= 0) {
+            day.login = true;
+          }
+        });
+      });
+      const userCal = Object.values(cal)
+        .map((week) => {
+          return week
+            .map((day) => (day ? (day.login ? "■" : "□") : "　"))
+            .join("");
+        })
+        .join("\n");
+
+      const lastLogin = DateTime.fromISO(loginDates[loginDates.length - 1]);
+      const isActive = today.diff(lastLogin, "days").as("days") < 7;
+      console.log(
+        `${user} ${isActive ? "(active)" : "(inactive)"}` + "\n" + userCal
+      );
+      if (isActive) userCals[user] = userCal;
+    });
+
+    if (!dryRun) {
+      const result = await app.client.chat.postMessage({
+        token: process.env.SLACK_BOT_TOKEN,
+        channel: process.env.TARGET_CHANNEL,
+        text:
+          ":medal: Weekly login report :medal:\n" +
+          `(${since.toFormat("yyyy/LL/dd")} - ${today.toFormat("yyyy/LL/dd")})`,
+      });
+      console.log(result);
+
+      if (result.ok) {
+        for (const user in userCals) {
+          const message =
+            `<@${user}>` +
+            "\n" +
+            userCals[user]
+              .replaceAll("■", ":large_green_square:")
+              .replaceAll("□", ":white_square:")
+              .replaceAll("　", ":white_small_square:");
+          const result1 = await app.client.chat.postMessage({
+            token: process.env.SLACK_BOT_TOKEN,
+            channel: process.env.TARGET_CHANNEL,
+            text: message,
+            thread_ts: result.ts,
+          });
+          console.log(result1);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const getLoginUsers = async (today) => {
   const result = await app.client.conversations.history({
     token: process.env.SLACK_BOT_TOKEN,
     channel: process.env.TARGET_CHANNEL,
@@ -67,11 +206,10 @@ const getUsers = async (today) => {
 
   const chatUsers = result.messages
     .reverse()
-    .filter((m) => !m.bot_id && !m.app_id)
+    .filter((m) => isUserMessage(m))
     .map((m) => {
       return m.user;
     })
-    .filter((u) => u && u != "USLACKBOT")
     .reduce((uniq, a) => {
       if (uniq.indexOf(a) < 0) uniq.push(a);
       return uniq;
@@ -79,7 +217,7 @@ const getUsers = async (today) => {
   console.log(chatUsers);
 
   const huddleUsers = result.messages
-    .filter((m) => m.user == "USLACKBOT" && m.room)
+    .filter((m) => isHuddleMessage(m))
     .map((m) => m.room.participant_history)
     .flat()
     .reduce((uniq, a) => {
@@ -89,6 +227,55 @@ const getUsers = async (today) => {
   console.log(huddleUsers);
 
   return { chatUsers, huddleUsers };
+};
+
+const getHistories = async (since) => {
+  const result = await app.client.conversations.history({
+    token: process.env.SLACK_BOT_TOKEN,
+    channel: process.env.TARGET_CHANNEL,
+    oldest: since.toUnixInteger(),
+    include_all_metadata: true,
+  });
+  const messages = result.messages;
+  let cursor = result.response_metadata.next_cursor;
+  while (cursor) {
+    const nextResult = await app.client.conversations.history({
+      token: process.env.SLACK_BOT_TOKEN,
+      channel: process.env.TARGET_CHANNEL,
+      oldest: since.toUnixInteger(),
+      cursor: cursor,
+      include_all_metadata: true,
+    });
+    messages.unshift(...nextResult.messages);
+    cursor = nextResult.response_metadata.next_cursor;
+  }
+  console.log("messages.length: ", messages.length);
+
+  const histories = [];
+  messages.reverse().forEach((m) => {
+    if (isUserMessage(m)) {
+      histories.push({
+        type: "chat",
+        user: m.user,
+        date: DateTime.fromSeconds(Number(m.ts))
+          .setZone("Asia/Tokyo")
+          .toISODate(),
+      });
+    } else if (isHuddleMessage(m)) {
+      m.room.participant_history.forEach((u) => {
+        histories.push({
+          type: "huddle",
+          user: u,
+          date: DateTime.fromSeconds(Number(m.ts))
+            .setZone("Asia/Tokyo")
+            .toISODate(),
+        });
+      });
+    }
+  });
+  console.log(histories.slice(-20));
+
+  return histories;
 };
 
 const getUserInfos = async (users) => {
