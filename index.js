@@ -126,10 +126,10 @@ const reportHistory = async (dryRun) => {
   console.log(`since: ${since.toISO()}, today: ${today.toISO()}`);
 
   try {
-    const userMessages = {};
+    const userCals = {};
     const histories = await getHistories(since);
     const userHistories = groupby(histories, "user");
-    userHistories.slice(0, 3).forEach(([user, histories]) => {
+    userHistories.forEach(([user, histories]) => {
       const loginDates = histories
         .map((h) => h.date)
         .reduce((uniq, a) => {
@@ -145,30 +145,38 @@ const reportHistory = async (dryRun) => {
           }
         });
       });
-      userMessages[user] = Object.values(cal)
+      const userCal = Object.values(cal)
         .map((week) => {
           return week
             .map((day) => (day ? (day.login ? "■" : "□") : "　"))
             .join("");
         })
         .join("\n");
-      console.log(user + "\n" + userMessages[user]);
+
+      const lastLogin = DateTime.fromISO(loginDates[loginDates.length - 1]);
+      const isActive = today.diff(lastLogin, "days").as("days") < 7;
+      console.log(
+        `${user} ${isActive ? "(active)" : "(inactive)"}` + "\n" + userCal
+      );
+      if (isActive) userCals[user] = userCal;
     });
 
     if (!dryRun) {
       const result = await app.client.chat.postMessage({
         token: process.env.SLACK_BOT_TOKEN,
         channel: process.env.TARGET_CHANNEL,
-        text: "Weekly login report",
+        text:
+          ":medal: Weekly login report :medal:\n" +
+          `(${since.toFormat("yyyy/LL/dd")} - ${today.toFormat("yyyy/LL/dd")})`,
       });
       console.log(result);
 
       if (result.ok) {
-        for (const user in userMessages) {
+        for (const user in userCals) {
           const message =
             `<@${user}>` +
             "\n" +
-            userMessages[user]
+            userCals[user]
               .replaceAll("■", ":large_green_square:")
               .replaceAll("□", ":white_square:")
               .replaceAll("　", ":white_small_square:");
