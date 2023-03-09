@@ -126,7 +126,7 @@ const reportHistory = async (dryRun) => {
   console.log(`since: ${since.toISO()}, today: ${today.toISO()}`);
 
   try {
-    const userCals = {};
+    const userMessages = {};
     const histories = await getHistories(since);
     const userHistories = groupby(histories, "user");
     userHistories.slice(0, 3).forEach(([user, histories]) => {
@@ -145,16 +145,14 @@ const reportHistory = async (dryRun) => {
           }
         });
       });
-      userCals[user] = cal;
-
-      const calStr = Object.values(cal)
+      userMessages[user] = Object.values(cal)
         .map((week) => {
           return week
             .map((day) => (day ? (day.login ? "■" : "□") : "　"))
-            .join(" ");
+            .join("");
         })
         .join("\n");
-      console.log(user + "\n" + calStr);
+      console.log(user + "\n" + userMessages[user]);
     });
 
     if (!dryRun) {
@@ -166,21 +164,18 @@ const reportHistory = async (dryRun) => {
       console.log(result);
 
       if (result.ok) {
-        for (const user in userCals) {
-          const calStr = Object.values(userCals[user])
-            .map((week) => {
-              return week
-                .map((day) => {
-                  if (!day) return ":white_small_square:";
-                  return day.login ? ":large_green_square:" : ":white_square:";
-                })
-                .join("");
-            })
-            .join("\n");
+        for (const user in userMessages) {
+          const message =
+            `<@${user}>` +
+            "\n" +
+            userMessages[user]
+              .replaceAll("■", ":large_green_square:")
+              .replaceAll("□", ":white_square:")
+              .replaceAll("　", ":white_small_square:");
           const result1 = await app.client.chat.postMessage({
             token: process.env.SLACK_BOT_TOKEN,
             channel: process.env.TARGET_CHANNEL,
-            text: `<@${user}>` + "\n" + calStr,
+            text: message,
             thread_ts: result.ts,
           });
           console.log(result1);
