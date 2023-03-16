@@ -75,3 +75,24 @@ Dry-run (without post) mode is also supported
 npm run dry
 npm run history:dry
 ```
+
+### AWS Lambda Execution
+
+1. Zip the directory (npm installed)
+2. Upload the zip to AWS Lambda
+
+Events:
+
+```
+// npm start
+{}
+
+// npm history
+{ "history": true }
+
+// npm dry
+{ "dryRun": true }
+
+// npm history:dry
+{ "history": true, "dryRun": true }
+```
