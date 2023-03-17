@@ -35,6 +35,10 @@ const groupby = (array, by) => {
   );
 };
 
+const T = (array) => {
+  return array[0].map((_, c) => array.map((r) => r[c]));
+};
+
 const createCalendar = (start, end) => {
   const calendar = { 1: [], 2: [], 3: [], 4: [], 5: [] };
 
@@ -190,9 +194,49 @@ const reportHistory = async (dryRun) => {
         }
       }
     }
+
+    await dumpCSV(userHistories, since, today);
   } catch (error) {
     console.error(error);
   }
+};
+
+const dumpCSV = async (userHistories, start, end) => {
+  // ユーザー名をcolumnにする
+  const userInfos = await getUserInfos(userHistories.map(([user, _]) => user));
+  const columns = userInfos.map(
+    (userInfo) => userInfo.profile.display_name || userInfo.real_name
+  );
+
+  // 日付をindexにする
+  const index = [];
+  let date = start;
+  while (date <= end) {
+    index.push(date.toISODate());
+    date = date.plus({ days: 1 });
+  }
+
+  const table = userHistories.map(([_, histories]) => {
+    return index.map((date) => {
+      return histories
+        .filter((h) => h.date === date)
+        .map((h) => h.type)
+        .reduce((uniq, a) => {
+          if (uniq.indexOf(a) < 0) uniq.push(a);
+          return uniq;
+        }, [])
+        .join("|");
+    });
+  });
+  // (ユーザー, 日付)の次元になっているので転置
+  const tableT = T(table);
+
+  const lines = [];
+  lines.push(["", ...columns].join(","));
+  index.forEach((date, i) => {
+    lines.push([date, ...tableT[i]].join(","));
+  });
+  console.log(lines.join("\n"));
 };
 
 const getLoginUsers = async (today) => {
