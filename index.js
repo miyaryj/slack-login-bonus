@@ -20,6 +20,11 @@ const isHuddleMessage = (message) => {
   return message.user == "USLACKBOT" && message.room;
 };
 
+const uniq = (cur, a) => {
+  if (cur.indexOf(a) < 0) cur.push(a);
+  return cur;
+};
+
 const groupby = (array, by) => {
   return Array.from(
     array.reduce((map, cur, idx, src) => {
@@ -93,15 +98,19 @@ const reportToday = async (dryRun) => {
       return;
     }
 
+    const uniqUsers = [...chatUserNames, ...huddleUserNames].reduce(uniq, []);
+
     const messages = [
-      "Today's login users",
+      `Today's login users (${uniqUsers.length})`,
       "on chat: " +
         (chatUserNames.length
-          ? chatUserNames.map((name) => `*${name}*`).join(", ")
+          ? chatUserNames.map((name) => `*${name}*`).join(", ") +
+            ` (${chatUserNames.length})`
           : "-"),
       "on huddle: " +
         (huddleUserNames.length
-          ? huddleUserNames.map((name) => `*${name}*`).join(", ")
+          ? huddleUserNames.map((name) => `*${name}*`).join(", ") +
+            ` (${huddleUserNames.length})`
           : "-"),
     ];
     console.log(messages);
@@ -134,12 +143,7 @@ const reportHistory = async (dryRun) => {
     const histories = await getHistories(since);
     const userHistories = groupby(histories, "user");
     userHistories.forEach(([user, histories]) => {
-      const loginDates = histories
-        .map((h) => h.date)
-        .reduce((uniq, a) => {
-          if (uniq.indexOf(a) < 0) uniq.push(a);
-          return uniq;
-        }, []);
+      const loginDates = histories.map((h) => h.date).reduce(uniq, []);
 
       const cal = createCalendar(since, today);
       Object.values(cal).forEach((week) => {
@@ -221,10 +225,7 @@ const dumpCSV = async (userHistories, start, end) => {
       return histories
         .filter((h) => h.date === date)
         .map((h) => h.type)
-        .reduce((uniq, a) => {
-          if (uniq.indexOf(a) < 0) uniq.push(a);
-          return uniq;
-        }, [])
+        .reduce(uniq, [])
         .join("|");
     });
   });
@@ -254,20 +255,14 @@ const getLoginUsers = async (today) => {
     .map((m) => {
       return m.user;
     })
-    .reduce((uniq, a) => {
-      if (uniq.indexOf(a) < 0) uniq.push(a);
-      return uniq;
-    }, []);
+    .reduce(uniq, []);
   console.log(chatUsers);
 
   const huddleUsers = result.messages
     .filter((m) => isHuddleMessage(m))
     .map((m) => m.room.participant_history)
     .flat()
-    .reduce((uniq, a) => {
-      if (uniq.indexOf(a) < 0) uniq.push(a);
-      return uniq;
-    }, []);
+    .reduce(uniq, []);
   console.log(huddleUsers);
 
   return { chatUsers, huddleUsers };
